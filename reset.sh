@@ -102,6 +102,7 @@ case "$1" in
 
     --restart)
         log "Restarting ollama.service (all connections will drop)..."
+        log "WARNING: any background delegate.sh calls will get empty responses and need re-running."
         read -rp "[reset] Confirm restart? [y/N] " yn
         [[ "${yn,,}" == "y" ]] || { log "Aborted."; exit 0; }
         sudo systemctl restart ollama
