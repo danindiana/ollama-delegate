@@ -89,7 +89,7 @@ case "$1" in
         while IFS= read -r pid; do
             [[ -z "$pid" ]] && continue
             log "  SIGTERM → PID $pid"
-            kill -TERM "$pid" 2>/dev/null || warn "Could not signal PID $pid"
+            sudo kill -TERM "$pid" 2>/dev/null || warn "Could not signal PID $pid (try running as root)"
         done <<< "$PIDS"
         sleep 2
         REMAINING=$(pgrep -f 'ollama runner' 2>/dev/null | wc -l || echo 0)

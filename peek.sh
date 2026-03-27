@@ -120,10 +120,7 @@ snapshot() {
 
     # Pending /api/generate connections (clients waiting for response)
     local pending_reqs
-    pending_reqs=$(ps aux 2>/dev/null \
-        | grep -c 'curl.*api/generate' \
-        | grep -v grep || true)
-    pending_reqs=$(ps aux | grep 'api/generate' | grep -vc grep || echo 0)
+    pending_reqs=$(ps aux | awk '/api\/generate/ && !/awk/' | wc -l)
     echo "    pending requests : $pending_reqs  (curl clients blocked on /api/generate)"
 
     echo ""
