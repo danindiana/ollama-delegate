@@ -61,6 +61,16 @@ fi
 
 [[ -z "$PROMPT" ]] && err "Empty prompt"
 
+# Guard against payloads that will silently fail due to shell quoting limits
+# or Ollama context overflow. Warn loudly; operator can override with --force.
+PROMPT_BYTES=$(printf '%s' "$PROMPT" | wc -c)
+MAX_PROMPT_BYTES="${OLLAMA_DELEGATE_MAX_BYTES:-65536}"  # ~16k tokens, configurable
+if [[ "$PROMPT_BYTES" -gt "$MAX_PROMPT_BYTES" ]]; then
+    err "Prompt is ${PROMPT_BYTES} bytes (limit: ${MAX_PROMPT_BYTES}). " \
+        "Set OLLAMA_DELEGATE_MAX_BYTES=N to raise, or pipe a shorter input. " \
+        "Large inline prompts can silently produce empty responses."
+fi
+
 # --- connectivity ---
 if ! curl -sf --max-time 3 "$OLLAMA_API/api/tags" > /dev/null 2>&1; then
     err "Ollama not reachable at $OLLAMA_API — is the service running?"
