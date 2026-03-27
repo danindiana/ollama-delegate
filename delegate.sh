@@ -22,6 +22,12 @@
 
 set -euo pipefail
 
+# --- dependency check ---
+for _cmd in curl jq date sed; do
+    command -v "$_cmd" &>/dev/null || { echo "[ollama-delegate] ERROR: '$_cmd' not found in PATH" >&2; exit 1; }
+done
+unset _cmd
+
 OLLAMA_API="${OLLAMA_HOST:-http://localhost:11434}"
 # Keep-alive configured on this host via systemd override
 KEEP_ALIVE_SECONDS=300   # OLLAMA_KEEP_ALIVE=5m
@@ -78,7 +84,7 @@ fi
 
 # --- inspect /api/ps ---
 get_ps() {
-    curl -sf --max-time 3 "$OLLAMA_API/api/ps" 2>/dev/null || echo '{"models":[]}'
+    curl -sf --max-time 5 "$OLLAMA_API/api/ps" 2>/dev/null || echo '{"models":[]}'
 }
 
 # Returns seconds until the loaded model's keep-alive expires (negative = expired)
@@ -100,6 +106,9 @@ is_likely_generating() {
     local expires_at="$1"
     local secs_left
     secs_left=$(seconds_until_expiry "$expires_at")
+    # Negative means keep-alive already lapsed — model is held by an active request
+    # but the timer has expired. Treat as generating (don't force a swap).
+    [[ $secs_left -lt 0 ]] && return 0
     # If secs_left is close to full KEEP_ALIVE, the timer was recently reset → generating
     local time_since_reset=$(( KEEP_ALIVE_SECONDS - secs_left ))
     [[ $time_since_reset -le $ACTIVE_THRESHOLD ]]
