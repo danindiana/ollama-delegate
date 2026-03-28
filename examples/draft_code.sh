@@ -9,7 +9,8 @@ DELEGATE="$SCRIPT_DIR/../delegate.sh"
 LANG="${1:?Provide a language (e.g. rust, python, bash)}"
 SPEC="${2:?Provide an implementation description}"
 
-"$DELEGATE" devstral:24b \
+# Stream so you see code appear live rather than waiting ~30s for devstral to load + generate
+"$DELEGATE" --stream devstral:24b \
 "Write a $LANG implementation for the following. Output only code with minimal inline comments. No markdown fences, no explanation outside the code.
 
 Spec: $SPEC"

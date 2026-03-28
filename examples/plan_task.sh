@@ -10,7 +10,8 @@ TASK="${1:?Provide a task description}"
 
 echo "=== Planning: $TASK ===" >&2
 
-"$DELEGATE" deepseek-r1:14b \
+# Use --stream so the plan appears token-by-token rather than after a silent wait
+"$DELEGATE" --stream deepseek-r1:14b \
 "You are a technical planning assistant. Produce a concise numbered step-by-step plan for the following task. Be specific, actionable, and brief — no preamble or conclusion.
 
 Task: $TASK"
