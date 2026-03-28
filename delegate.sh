@@ -6,10 +6,12 @@
 # immediately or waits before forcing a model swap.
 #
 # Usage:
-#   delegate.sh [--wait] [--max-wait N] <model> <prompt>
-#   echo "prompt" | delegate.sh [--wait] [--max-wait N] <model> -
+#   delegate.sh [flags] <model> <prompt>
+#   echo "prompt" | delegate.sh [flags] <model> -
 #
 # Flags:
+#   --stream        Stream tokens to stdout as they arrive (live output).
+#                   Ctrl-C cleanly terminates the generation.
 #   --wait          Block until Ollama is fully idle before sending (avoids
 #                   interrupting another active generation at the cost of latency)
 #   --max-wait N    Max seconds to wait when --wait is set (default: 300)
@@ -17,6 +19,7 @@
 #
 # Examples:
 #   delegate.sh deepseek-r1:14b "Plan a Postgres schema migration"
+#   delegate.sh --stream qwen3.5:9b "Explain RAID-0 in detail"
 #   echo "Summarize this log" | delegate.sh --wait qwen3.5:9b -
 #   delegate.sh --wait --max-wait 120 nemotron-terminal-14b "How do I check RAID health?"
 
@@ -39,6 +42,7 @@ POLL_INTERVAL=5
 DO_WAIT=0
 MAX_WAIT=300
 QUIET=0
+STREAM=0
 
 log()  { [[ "$QUIET" == "0" ]] && echo "[ollama-delegate] $*" >&2 || true; }
 warn() { echo "[ollama-delegate] WARN: $*" >&2; }
@@ -47,6 +51,7 @@ err()  { echo "[ollama-delegate] ERROR: $*" >&2; exit 1; }
 # --- parse flags ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --stream)    STREAM=1; shift ;;
         --wait)      DO_WAIT=1; shift ;;
         --max-wait)  MAX_WAIT="${2:?--max-wait requires a value}"; shift 2 ;;
         --quiet)     QUIET=1; shift ;;
@@ -165,15 +170,51 @@ fi
 
 log "Submitting prompt to $MODEL..."
 
-PAYLOAD=$(jq -n \
-    --arg model "$MODEL" \
-    --arg prompt "$PROMPT" \
-    '{model: $model, prompt: $prompt, stream: false, options: {temperature: 0.3}}')
+if [[ "$STREAM" -eq 1 ]]; then
+    # --- streaming mode ---
+    # Tokens arrive as newline-delimited JSON: {"response":"tok","done":false}
+    # Print each token immediately; final chunk has "done":true.
+    # Trap SIGINT so Ctrl-C kills curl cleanly without leaving a zombie runner.
+    CURL_PID=""
+    _stream_cleanup() {
+        [[ -n "$CURL_PID" ]] && kill "$CURL_PID" 2>/dev/null || true
+        echo ""  # newline after interrupted output
+        exit 130
+    }
+    trap _stream_cleanup INT TERM
 
-RESPONSE=$(curl -sf --max-time 600 "$OLLAMA_API/api/generate" \
-    -H "Content-Type: application/json" \
-    -d "$PAYLOAD")
+    PAYLOAD=$(jq -n \
+        --arg model "$MODEL" \
+        --arg prompt "$PROMPT" \
+        '{model: $model, prompt: $prompt, stream: true, options: {temperature: 0.3}}')
 
-[[ -z "$RESPONSE" ]] && err "Empty response from Ollama (model: $MODEL may have failed to load)"
+    # --no-buffer: flush each chunk immediately; -N: disable buffering alias
+    curl -sfN --no-buffer --max-time 600 \
+        "$OLLAMA_API/api/generate" \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD" \
+    | while IFS= read -r chunk; do
+        [[ -z "$chunk" ]] && continue
+        token=$(printf '%s' "$chunk" | jq -r '.response // empty' 2>/dev/null)
+        done_flag=$(printf '%s' "$chunk" | jq -r '.done' 2>/dev/null)
+        [[ -n "$token" ]] && printf '%s' "$token"
+        [[ "$done_flag" == "true" ]] && break
+    done
+    echo ""  # final newline
 
-echo "$RESPONSE" | jq -r '.response'
+    trap - INT TERM
+else
+    # --- batch mode (default) ---
+    PAYLOAD=$(jq -n \
+        --arg model "$MODEL" \
+        --arg prompt "$PROMPT" \
+        '{model: $model, prompt: $prompt, stream: false, options: {temperature: 0.3}}')
+
+    RESPONSE=$(curl -sf --max-time 600 "$OLLAMA_API/api/generate" \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD")
+
+    [[ -z "$RESPONSE" ]] && err "Empty response from Ollama (model: $MODEL may have failed to load)"
+
+    echo "$RESPONSE" | jq -r '.response'
+fi
