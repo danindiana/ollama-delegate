@@ -33,7 +33,7 @@ unset _cmd
 
 OLLAMA_API="${OLLAMA_HOST:-http://localhost:11434}"
 # Keep-alive configured on this host via systemd override
-KEEP_ALIVE_SECONDS=300   # OLLAMA_KEEP_ALIVE=5m
+KEEP_ALIVE_SECONDS=3600  # OLLAMA_KEEP_ALIVE=60m (worlock systemd override)
 # If expires_at is within this many seconds of keep-alive from now,
 # we treat the model as actively generating (expires_at was recently reset).
 ACTIVE_THRESHOLD=30
